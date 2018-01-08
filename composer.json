@@ -8,7 +8,11 @@
         }
     ],
     "minimum-stability": "dev",
-    "require": {},
+    "require": {
+		"php": ">=5.4.0",
+		"laravel/framework": "5.*",
+		"league/flysystem-aws-s3-v3": "~1.0"
+	},
 	"extra": {
 	    "laravel": {
 	        "providers": [
