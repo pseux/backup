@@ -1,25 +1,33 @@
 {
-    "name": "pseux/backup",
-    "description": "Laravel package to backup database to AWS S3",
+	"name": "pseux/backup",
+	"description": "Laravel package to backup database to AWS S3",
 	"keywords": ["laravel", "database", "backup"],
 	"license": "MIT",
-    "authors": [
-        {
-            "name": "Oliver Svenson",
-            "email": "olly@pseux.com"
-        }
-    ],
-    "minimum-stability": "dev",
-    "require": {
+	"authors": [
+		{
+			"name": "Oliver Svenson",
+			"email": "olly@pseux.com"
+		}
+	],
+	"minimum-stability": "dev",
+	"require": {
 		"php": ">=5.4.0",
 		"laravel/framework": "5.*",
 		"league/flysystem-aws-s3-v3": "~1.0"
 	},
 	"extra": {
-	    "laravel": {
-	        "providers": [
-	            "Pseux\\Backup\\BackupServiceProvider"
-	        ]
-	    }
+		"laravel": {
+			"providers": [
+				"Pseux\\Backup\\BackupServiceProvider"
+			]
+		},
+		"branch-alias": {
+			"dev-master": "0.9"
+		}
+	},
+	"autoload": {
+		"psr-4": {
+			"Pseux\\Backup\\": "src"
+		}
 	}
 }
