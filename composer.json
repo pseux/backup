@@ -1,6 +1,8 @@
 {
     "name": "pseux/backup",
-    "description": "Package to backup database",
+    "description": "Laravel package to backup database to AWS S3",
+	"keywords": ["laravel", "database", "backup"],
+	"license": "MIT",
     "authors": [
         {
             "name": "Oliver Svenson",
