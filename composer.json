@@ -1,0 +1,19 @@
+{
+    "name": "pseux/backup",
+    "description": "Package to backup database",
+    "authors": [
+        {
+            "name": "Oliver Svenson",
+            "email": "olly@pseux.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {},
+	"extra": {
+	    "laravel": {
+	        "providers": [
+	            "pseux\\backup\\BackupServiceProvider"
+	        ]
+	    }
+	}
+}
