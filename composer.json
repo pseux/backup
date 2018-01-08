@@ -18,7 +18,7 @@
 	"extra": {
 	    "laravel": {
 	        "providers": [
-	            "pseux\\backup\\BackupServiceProvider"
+	            "Pseux\\Backup\\BackupServiceProvider"
 	        ]
 	    }
 	}
