@@ -13,7 +13,7 @@ class Backup extends Command
 	 *
 	 * @var string
 	 */
-	protected $signature = 'backup:run {--import}';
+	protected $signature = 'backup:run {--import} {--live}';
 
 	/**
 	 * The console command description.
@@ -78,6 +78,7 @@ class Backup extends Command
 
 			// -- Upload backup
 			Storage::disk('s3')->putFileAs($remote_dir, new File($dir . '/' . $filename), $filename);
+			Storage::disk('s3')->delete($remote_dir . '/current.sql.gz');
 			Storage::disk('s3')->copy($remote_dir . '/' . $filename, $remote_dir . '/current.sql.gz');
 		}
 		catch (\Exception $e)
@@ -91,7 +92,8 @@ class Backup extends Command
 
 	private function runImport()
 	{
-		$remote_dir = config('app.env') . '-' . config('app.name');
+		$remote_dir = $this->option('live') ? 'live' : config('app.env');
+		$remote_dir .= '-' . config('app.name');
 		$remote_dir = str_slug($remote_dir);
 
 		try

@@ -31,3 +31,7 @@ AWS_BUCKET=
 Add the following code to the `schedule` function in your `App\Console\Kernel.php` file:
 
     $schedule->command('backup:run')->daily();
+
+## Loading backups
+
+    php artisan backup:run --import
