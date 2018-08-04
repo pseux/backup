@@ -13,7 +13,7 @@ class Backup extends Command
 	 *
 	 * @var string
 	 */
-	protected $signature = 'backup:run';
+	protected $signature = 'backup:run {--import}';
 
 	/**
 	 * The console command description.
@@ -38,6 +38,14 @@ class Backup extends Command
 	 * @return mixed
 	 */
 	public function handle()
+	{
+		if ($this->option('import'))
+			return $this->runImport();
+
+		$this->runBackup();
+	}
+
+	private function runBackup()
 	{
 		$dir = storage_path('app/backups');
 		if (!is_dir($dir)) mkdir($dir, 0777, true);
@@ -70,17 +78,56 @@ class Backup extends Command
 
 			// -- Upload backup
 			Storage::disk('s3')->putFileAs($remote_dir, new File($dir . '/' . $filename), $filename);
-
-			// -- Optionally remove backup
-			$retain_one = env('BACKUP_RETAIN', true);
-			if (!$retain_one) unlink($dir . '/' . $filename);
+			Storage::disk('s3')->copy($remote_dir . '/' . $filename, $remote_dir . '/current.sql.gz');
 		}
 		catch (\Exception $e)
 		{
-			throw $e;
-			// dump('Backup error: ' . $e->getMessage());
+			$this->error('Error creating backup: ' . $e->getMessage());
+			exit;
 		}
 
-		dump('Backup successful');
+		$this->info('Backup successful.');
+	}
+
+	private function runImport()
+	{
+		$remote_dir = config('app.env') . '-' . config('app.name');
+		$remote_dir = str_slug($remote_dir);
+
+		try
+		{
+			// Download file
+			$file = Storage::disk('s3')->get($remote_dir . '/current.sql.gz');
+			Storage::disk('local')->put('database.sql.gz', $file);
+
+			// Unzip file
+			$command = sprintf('gunzip -f %s',
+				storage_path('app/database.sql.gz')
+			);
+			exec($command);
+
+			// Import SQL file
+			$password = config('database.connections.mysql.password');
+			if ($password) $password = '-p\'' . $password . '\'';
+
+			$command = sprintf('mysql -u \'%s\' %s %s < %s',
+				config('database.connections.mysql.username'),
+				$password,
+				config('database.connections.mysql.database'),
+				storage_path('app/database.sql')
+			);
+
+			exec($command);
+
+			// Remove file
+			Storage::disk('local')->delete('database.sql');
+		}
+		catch (\Exception $e)
+		{
+			$this->error('Remote backup not available');
+			exit;
+		}
+
+		$this->info('Backup loaded.');
 	}
 }

@@ -31,10 +31,3 @@ AWS_BUCKET=
 Add the following code to the `schedule` function in your `App\Console\Kernel.php` file:
 
     $schedule->command('backup:run')->daily();
-
-## Optional config
-
-If you don't want to store the last backup on your machine, add the following ENV setting:
-
-    BACKUP_RETAIN=false
-

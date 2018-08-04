@@ -12,7 +12,6 @@
 	"minimum-stability": "dev",
 	"require": {
 		"php": ">=5.4.0",
-		"laravel/framework": "5.*",
 		"league/flysystem-aws-s3-v3": "~1.0"
 	},
 	"extra": {
@@ -20,9 +19,6 @@
 			"providers": [
 				"Pseux\\Backup\\BackupServiceProvider"
 			]
-		},
-		"branch-alias": {
-			"dev-master": "0.9-dev"
 		}
 	},
 	"autoload": {
