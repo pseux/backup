@@ -13,7 +13,7 @@ class Backup extends Command
 	 *
 	 * @var string
 	 */
-	protected $signature = 'backup:run {--import} {--live}';
+	protected $signature = 'backup:run {--import=}';
 
 	/**
 	 * The console command description.
@@ -39,8 +39,8 @@ class Backup extends Command
 	 */
 	public function handle()
 	{
-		if ($this->option('import'))
-			return $this->runImport();
+		if ($this->option('import') !== null)
+			return $this->runImport($this->option('import'));
 
 		$this->runBackup();
 	}
@@ -90,10 +90,9 @@ class Backup extends Command
 		$this->info('Backup successful.');
 	}
 
-	private function runImport()
+	private function runImport($source)
 	{
-		$remote_dir = $this->option('live') ? 'live' : config('app.env');
-		$remote_dir .= '-' . config('app.name');
+		$remote_dir = $source . '-' . config('app.name');
 		$remote_dir = str_slug($remote_dir);
 
 		try
