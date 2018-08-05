@@ -34,4 +34,4 @@ Add the following code to the `schedule` function in your `App\Console\Kernel.ph
 
 ## Loading backups
 
-    php artisan backup:run --import
+    php artisan backup:run --import={source}
