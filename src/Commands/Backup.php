@@ -87,7 +87,7 @@ class Backup extends Command
 			exit;
 		}
 
-		$this->info('Backup successful.');
+		$this->info('Backup successful as: ' . $remote_dir);
 	}
 
 	private function runImport($source)
