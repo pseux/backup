@@ -4,31 +4,22 @@ namespace Pseux\Backup;
 
 use Illuminate\Support\ServiceProvider;
 use Pseux\Backup\Commands\Backup;
+use Pseux\Backup\Commands\BackupImport;
 
 class BackupServiceProvider extends ServiceProvider
 {
-	/**
-	 * Bootstrap the application services.
-	 *
-	 * @return void
-	 */
 	public function boot()
 	{
 		if ($this->app->runningInConsole())
 		{
 			$this->commands([
 				Backup::class,
+				BackupImport::class,
 			]);
 		}
 	}
 
-	/**
-	 * Register the application services.
-	 *
-	 * @return void
-	 */
 	public function register()
 	{
-		//
 	}
 }

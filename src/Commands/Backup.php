@@ -4,54 +4,64 @@ namespace Pseux\Backup\Commands;
 
 use Illuminate\Http\File;
 use Illuminate\Console\Command;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
 
 class Backup extends Command
 {
-	/**
-	 * The name and signature of the console command.
-	 *
-	 * @var string
-	 */
-	protected $signature = 'backup:run {--import=}';
+	protected $signature = 'backup {type}';
+	protected $description = 'Creating backups of files';
 
-	/**
-	 * The console command description.
-	 *
-	 * @var string
-	 */
-	protected $description = 'Backup the database';
+	// --
 
-	/**
-	 * Create a new command instance.
-	 *
-	 * @return void
-	 */
 	public function __construct()
 	{
 		parent::__construct();
 	}
 
-	/**
-	 * Execute the console command.
-	 *
-	 * @return mixed
-	 */
 	public function handle()
 	{
-		if ($this->option('import') !== null)
-			return $this->runImport($this->option('import'));
+		$type = $this->argument('type');
 
-		$this->runBackup();
+		switch ($type)
+		{
+			case 'db':
+				return $this->runBackupDB();
+
+			case 'env':
+				return $this->runBackupEnv();
+
+			default:
+				$this->error('Invalid type: ' . $type);
+				exit;
+		}
 	}
 
-	private function runBackup()
+	private function runBackupEnv()
 	{
-		$dir = storage_path('app/backups');
-		if (!is_dir($dir)) mkdir($dir, 0777, true);
+		if (config('app.env') !== 'local')
+			return $this->error('Only run on local. #security');
 
 		$remote_dir = config('app.env') . '-' . config('app.name');
-		$remote_dir = str_slug($remote_dir);
+		$remote_dir = Str::slug($remote_dir);
+
+		try
+		{
+			Storage::disk('s3')->putFileAs($remote_dir, new File(base_path('.env')), 'current.env');
+		}
+		catch (\Exception $e)
+		{
+			$this->error('Error creating backup: ' . $e->getMessage());
+			exit;
+		}
+	}
+
+	private function runBackupDB()
+	{
+		$dir = $this->getStorageDir();
+
+		$remote_dir = config('app.env') . '-' . config('app.name');
+		$remote_dir = Str::slug($remote_dir);
 
 		$filename = 'db-' . date('Ymd-His') . '-' . substr(md5(microtime()), 0, 5) . '.sql.gz';
 
@@ -90,45 +100,13 @@ class Backup extends Command
 		$this->info('Backup successful as: ' . $remote_dir);
 	}
 
-	private function runImport($source)
+	private function getStorageDir()
 	{
-		$remote_dir = $source . '-' . config('app.name');
-		$remote_dir = str_slug($remote_dir);
+		$dir = storage_path('app/backups');
 
-		try
-		{
-			// Download file
-			$file = Storage::disk('s3')->get($remote_dir . '/current.sql.gz');
-			Storage::disk('local')->put('database.sql.gz', $file);
+		if (!is_dir($dir))
+			mkdir($dir, 0777, true);
 
-			// Unzip file
-			$command = sprintf('gunzip -f %s',
-				storage_path('app/database.sql.gz')
-			);
-			exec($command);
-
-			// Import SQL file
-			$password = config('database.connections.mysql.password');
-			if ($password) $password = '-p\'' . $password . '\'';
-
-			$command = sprintf('mysql -u \'%s\' %s %s < %s',
-				config('database.connections.mysql.username'),
-				$password,
-				config('database.connections.mysql.database'),
-				storage_path('app/database.sql')
-			);
-
-			exec($command);
-
-			// Remove file
-			Storage::disk('local')->delete('database.sql');
-		}
-		catch (\Exception $e)
-		{
-			$this->error('Remote backup not available');
-			exit;
-		}
-
-		$this->info('Backup loaded.');
+		return $dir;
 	}
 }
