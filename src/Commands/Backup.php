@@ -3,11 +3,10 @@
 namespace Pseux\Backup\Commands;
 
 use Illuminate\Http\File;
-use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
 
-class Backup extends Command
+class Backup extends BaseBackup
 {
 	protected $signature = 'backup {type}';
 	protected $description = 'Creating backups of files';
@@ -21,6 +20,9 @@ class Backup extends Command
 
 	public function handle()
 	{
+		if (env('AWS_ACCESS_KEY_ID') === null)
+			return $this->error('No AWS credentials found.');
+
 		$type = $this->argument('type');
 
 		switch ($type)
@@ -54,6 +56,8 @@ class Backup extends Command
 			$this->error('Error creating backup: ' . $e->getMessage());
 			exit;
 		}
+
+		$this->info('Backup successful at: ' . $remote_dir);
 	}
 
 	private function runBackupDB()
@@ -97,7 +101,7 @@ class Backup extends Command
 			exit;
 		}
 
-		$this->info('Backup successful as: ' . $remote_dir);
+		$this->info('Backup successful at: ' . $remote_dir);
 	}
 
 	private function getStorageDir()

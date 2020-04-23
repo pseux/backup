@@ -3,11 +3,10 @@
 namespace Pseux\Backup\Commands;
 
 use Illuminate\Http\File;
-use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
 
-class BackupImport extends Command
+class BackupImport extends BaseBackup
 {
 	protected $signature = 'backup:import {type} {source?}';
 	protected $description = 'Import previous backups';
@@ -21,9 +20,11 @@ class BackupImport extends Command
 
 	public function handle()
 	{
+		if (env('AWS_ACCESS_KEY_ID') === null)
+			return $this->error('No AWS credentials found.');
+
 		$type = $this->argument('type');
-		$source = $this->argument('source');
-		if ($source === null) $source = config('app.env');
+		$source = $this->argument('source') ?: config('app.env');
 
 		switch ($type)
 		{
