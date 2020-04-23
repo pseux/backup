@@ -12,7 +12,7 @@ class BaseBackup extends Command
 	{
 		parent::__construct();
 
-		if (config('app.env') === 'local' && env('AWS_ACCESS_KEY_ID') === null)
+		if (env('AWS_ACCESS_KEY_ID') === null)
 		{
 			if (!is_file(env('HOME') . '/.backupconfig')) return;
 
