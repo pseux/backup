@@ -56,7 +56,7 @@ class BackupImport extends BaseBackup
 			exit;
 		}
 
-		$this->info('Backup loaded.');
+		$this->info('Backup loaded: ' . $remote_dir);
 	}
 
 	private function runImportDB($source)
@@ -68,12 +68,16 @@ class BackupImport extends BaseBackup
 		{
 			// Download file
 			$file = Storage::disk('s3')->get($remote_dir . '/current.sql.gz');
+			if ($file === false)
+			{
+				$this->error('Remote backup not accessible.');
+				exit;
+			}
+
 			Storage::disk('local')->put('database.sql.gz', $file);
 
 			// Unzip file
-			$command = sprintf('gunzip -f %s',
-				storage_path('app/database.sql.gz')
-			);
+			$command = sprintf('gunzip -f %s', storage_path('app/database.sql.gz'));
 			exec($command);
 
 			// Import SQL file
@@ -94,10 +98,10 @@ class BackupImport extends BaseBackup
 		}
 		catch (\Exception $e)
 		{
-			$this->error('Remote backup not available');
+			$this->error('Remote backup not available.');
 			exit;
 		}
 
-		$this->info('Backup loaded.');
+		$this->info('Backup loaded: ' . $remote_dir);
 	}
 }

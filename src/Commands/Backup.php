@@ -57,7 +57,7 @@ class Backup extends BaseBackup
 			exit;
 		}
 
-		$this->info('Backup successful at: ' . $remote_dir);
+		$this->info('Backup successful: ' . $remote_dir);
 	}
 
 	private function runBackupDB()
@@ -101,7 +101,7 @@ class Backup extends BaseBackup
 			exit;
 		}
 
-		$this->info('Backup successful at: ' . $remote_dir);
+		$this->info('Backup successful: ' . $remote_dir);
 	}
 
 	private function getStorageDir()

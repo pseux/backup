@@ -14,10 +14,19 @@ class BaseBackup extends Command
 
 		if (empty(env('AWS_ACCESS_KEY_ID')))
 		{
-			if (!is_file(env('HOME') . '/.backupconfig')) return;
+			if (!is_file(env('HOME') . '/.backupconfig'))
+				return;
 
-			$dotenv = Dotenv::createMutable(env('HOME'), '.backupconfig');
-			$dotenv->load();
+			if (!method_exists(Dotenv::class, 'createMutable')) // Dotenv 2 support
+			{
+				$dotenv = new Dotenv(env('HOME'), '.backupconfig');
+				$dotenv->load();
+			}
+			else
+			{
+				$dotenv = Dotenv::createMutable(env('HOME'), '.backupconfig');
+				$dotenv->load();
+			}
 
 			config(['filesystems.disks.s3.key'    => env('AWS_ACCESS_KEY_ID')]);
 			config(['filesystems.disks.s3.secret' => env('AWS_SECRET_ACCESS_KEY')]);
