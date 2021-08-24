@@ -72,7 +72,7 @@ class Backup extends BaseBackup
 		$password = config('database.connections.mysql.password');
 		if ($password) $password = '-p\'' . $password . '\'';
 
-		$command = sprintf('mysqldump %s -u \'%s\' %s | gzip > %s',
+		$command = sprintf('mysqldump --no-tablespaces %s -u \'%s\' %s | gzip > %s',
 			config('database.connections.mysql.database'),
 			config('database.connections.mysql.username'),
 			$password,
