@@ -31,9 +31,10 @@ class BackupImport extends BaseBackup
 			return self::FAILURE;
 		}
 
-		$path = $this->remoteDir($this->argument('source')) . '/current.sql.gz';
-		$gz = $this->storageDir() . '/import.sql.gz';
-		$sql = $this->storageDir() . '/import.sql';
+		$extension = $this->dumpExtension($db);
+		$path = $this->remoteDir($this->argument('source')) . '/current.' . $extension . '.gz';
+		$dump = $this->storageDir() . '/import.' . $extension;
+		$gz = $dump . '.gz';
 
 		// -- Download
 		try
@@ -50,21 +51,52 @@ class BackupImport extends BaseBackup
 		fclose($stream);
 
 		// -- Unzip and import
-		$command = sprintf('mysql %s %s < %s',
-			$this->mysqlArguments($db),
-			escapeshellarg($db['database']),
-			escapeshellarg($sql)
-		);
-
-		$ok = $this->shell('gunzip -f ' . escapeshellarg($gz)) && $this->shell($command, $this->mysqlEnv($db));
+		$ok = $this->shell('gunzip -f ' . escapeshellarg($gz))
+			&& ($this->isSqlite($db) ? $this->restoreSqlite($db, $dump) : $this->mysqlImport($db, $dump));
 
 		@unlink($gz);
-		@unlink($sql);
+		@unlink($dump);
 
 		if (!$ok)
 			return self::FAILURE;
 
 		$this->info('Backup loaded: ' . $path);
 		return self::SUCCESS;
+	}
+
+	protected function mysqlImport(array $db, string $from): bool
+	{
+		$command = sprintf('mysql %s %s < %s',
+			$this->mysqlArguments($db),
+			escapeshellarg($db['database']),
+			escapeshellarg($from)
+		);
+
+		return $this->shell($command, $this->mysqlEnv($db));
+	}
+
+	/**
+	 * Swap the restored file in for the current database. Any WAL or
+	 * journal left over from the old database would corrupt the new one,
+	 * so those go too.
+	 */
+	protected function restoreSqlite(array $db, string $from): bool
+	{
+		$target = $this->sqlitePath($db);
+		$dir = dirname($target);
+
+		if (!is_dir($dir))
+			mkdir($dir, 0755, true);
+
+		foreach (['-wal', '-shm', '-journal'] as $suffix)
+			@unlink($target . $suffix);
+
+		if (!rename($from, $target))
+		{
+			$this->error('Could not replace ' . $target);
+			return false;
+		}
+
+		return true;
 	}
 }

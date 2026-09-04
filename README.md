@@ -1,8 +1,8 @@
 # Laravel package: backups
 
-Dumps your MySQL/MariaDB database, gzips it and uploads it to an S3 bucket. Can restore it again too. Also syncs the site's uploaded files in `storage/app` to the same bucket.
+Dumps your MySQL/MariaDB or SQLite database, gzips it and uploads it to an S3 bucket. Can restore it again too. Also syncs the site's uploaded files in `storage/app` to the same bucket.
 
-Requires PHP 8.1+ and Laravel 10 or newer, with `mysqldump`, `mysql`, `gzip` and `gunzip` available on the server.
+Requires PHP 8.1+ and Laravel 10 or newer, with `gzip` and `gunzip` available on the server, plus `mysqldump` and `mysql` for MySQL/MariaDB. SQLite needs nothing extra: the database is copied with `VACUUM INTO` through PDO, which gives a consistent snapshot even while the app is writing.
 
 ## Installation
 
@@ -36,7 +36,7 @@ Notes:
 - `AWS_PROFILE` selects a different profile, and `AWS_BACKUP_BUCKET` overrides the bucket, which is handy in a cron line.
 - If the app's own `s3` disk has a bucket configured (`AWS_BUCKET` in `.env`), that bucket and those credentials win, so a site can opt out of the server default.
 
-Backups are stored in the bucket under `{APP_ENV}-{APP_NAME}/`, slugified (for example `production-my-app/`). Each backup is kept as a timestamped file, and the latest one is also copied to `current.sql.gz`. Synced files go in a `files/` folder alongside them.
+Backups are stored in the bucket under `{APP_ENV}-{APP_NAME}/`, slugified (for example `production-my-app/`). Each backup is kept as a timestamped file, and the latest one is also copied to `current.sql.gz` (or `current.sqlite.gz` for SQLite). Synced files go in a `files/` folder alongside them.
 
 ## Commands
 
@@ -49,6 +49,8 @@ Backups are stored in the bucket under `{APP_ENV}-{APP_NAME}/`, slugified (for e
 	php artisan backup:import production
 
 When run in production, `backup:import` asks for confirmation first. Pass `--force` to skip the prompt.
+
+The backup has to match the local driver: a MySQL dump can't be restored into SQLite or the other way round. For SQLite, the restore replaces the database file outright, so anything written since the backup is lost.
 
 `backup:files` mirrors `storage/app` (minus dotfiles and the package's own `backups/` folder) to `files/` in the site's S3 folder. It lists the remote folder once, then uploads only files that are new, or whose size or modified time differs, so a nightly run with few changes costs almost nothing. Sites with nothing in `storage/app` are skipped.
 

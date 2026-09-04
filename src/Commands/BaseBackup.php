@@ -57,18 +57,47 @@ abstract class BaseBackup extends Command
 	}
 
 	/**
-	 * Config for the default database connection. Only MySQL-compatible
-	 * connections are supported, since the dump goes through mysqldump.
+	 * Config for the default database connection. MySQL-compatible
+	 * connections are dumped with mysqldump; SQLite databases are copied
+	 * as a file.
 	 */
 	protected function databaseConfig(): array
 	{
 		$name = config('database.default');
 		$db = config('database.connections.' . $name);
 
-		if (!in_array($db['driver'] ?? null, ['mysql', 'mariadb']))
-			throw new RuntimeException('Unsupported database driver for connection "' . $name . '": only mysql and mariadb are supported.');
+		if (!in_array($db['driver'] ?? null, ['mysql', 'mariadb', 'sqlite']))
+			throw new RuntimeException('Unsupported database driver for connection "' . $name . '": only mysql, mariadb and sqlite are supported.');
+
+		if ($this->isSqlite($db) && in_array($db['database'] ?? '', ['', ':memory:']))
+			throw new RuntimeException('Only file-based SQLite databases can be backed up.');
 
 		return $db;
+	}
+
+	protected function isSqlite(array $db): bool
+	{
+		return $db['driver'] === 'sqlite';
+	}
+
+	/**
+	 * Extension of the dump file: a plain SQL dump for MySQL, or a copy of
+	 * the database file itself for SQLite.
+	 */
+	protected function dumpExtension(array $db): string
+	{
+		return $this->isSqlite($db) ? 'sqlite' : 'sql';
+	}
+
+	/**
+	 * Absolute path to the SQLite database file, resolved relative to the
+	 * app root the same way Laravel's connector does.
+	 */
+	protected function sqlitePath(array $db): string
+	{
+		$path = $db['database'];
+
+		return realpath($path) ?: (str_starts_with($path, '/') ? $path : base_path($path));
 	}
 
 	/**
