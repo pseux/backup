@@ -7,54 +7,21 @@ use Throwable;
 
 class Backup extends BaseBackup
 {
-	protected $signature = 'backup {type : What to back up: db or env}';
-	protected $description = 'Back up the database or .env file to S3';
+	protected $signature = 'backup';
+	protected $description = 'Dump the database and upload it to S3';
 
 	public function handle(): int
 	{
-		$type = $this->argument('type');
-
-		if (!in_array($type, ['db', 'env']))
-		{
-			$this->error('Invalid type: ' . $type . ' (expected db or env)');
-			return self::INVALID;
-		}
-
-		if (!$this->loadCredentials())
-			return self::FAILURE;
-
-		return $type === 'db' ? $this->backupDatabase() : $this->backupEnv();
-	}
-
-	private function backupEnv(): int
-	{
-		if (config('app.env') !== 'local')
-		{
-			$this->error('The .env backup can only be run locally.');
-			return self::FAILURE;
-		}
-
-		$remote = $this->remoteDir();
-
 		try
 		{
-			$this->disk()->putFileAs($remote, base_path('.env'), 'current.env');
+			$db = $this->databaseConfig();
+			$disk = $this->disk();
 		}
 		catch (Throwable $e)
 		{
-			$this->error('Error creating backup: ' . $e->getMessage());
+			$this->error($e->getMessage());
 			return self::FAILURE;
 		}
-
-		$this->info('Backup successful: ' . $remote . '/current.env');
-		return self::SUCCESS;
-	}
-
-	private function backupDatabase(): int
-	{
-		$db = $this->databaseConfig();
-		if ($db === null)
-			return self::FAILURE;
 
 		$dir = $this->storageDir();
 		$remote = $this->remoteDir();
@@ -84,14 +51,13 @@ class Backup extends BaseBackup
 		// -- Upload
 		try
 		{
-			$disk = $this->disk();
 			$disk->putFileAs($remote, $gz, basename($gz));
 			$disk->delete($remote . '/current.sql.gz');
 			$disk->copy($remote . '/' . basename($gz), $remote . '/current.sql.gz');
 		}
 		catch (Throwable $e)
 		{
-			$this->error('Error creating backup: ' . $e->getMessage());
+			$this->error('Error uploading backup: ' . $e->getMessage());
 			return self::FAILURE;
 		}
 
