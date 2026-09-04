@@ -1,8 +1,8 @@
 {
 	"name": "pseux/backup",
-	"description": "Laravel package to backup database to AWS S3",
+	"description": "Laravel package to backup database and files to AWS S3",
 	"type": "library",
-	"keywords": ["laravel", "database", "backup"],
+	"keywords": ["laravel", "database", "backup", "s3"],
 	"license": "MIT",
 	"authors": [
 		{

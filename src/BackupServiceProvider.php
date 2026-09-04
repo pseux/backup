@@ -4,6 +4,7 @@ namespace Pseux\Backup;
 
 use Illuminate\Support\ServiceProvider;
 use Pseux\Backup\Commands\Backup;
+use Pseux\Backup\Commands\BackupFiles;
 use Pseux\Backup\Commands\BackupImport;
 
 class BackupServiceProvider extends ServiceProvider
@@ -14,6 +15,7 @@ class BackupServiceProvider extends ServiceProvider
 		{
 			$this->commands([
 				Backup::class,
+				BackupFiles::class,
 				BackupImport::class,
 			]);
 		}
