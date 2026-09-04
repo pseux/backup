@@ -2,115 +2,100 @@
 
 namespace Pseux\Backup\Commands;
 
-use Illuminate\Http\File;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 class Backup extends BaseBackup
 {
-	protected $signature = 'backup {type}';
-	protected $description = 'Creating backups of files';
+	protected $signature = 'backup {type : What to back up: db or env}';
+	protected $description = 'Back up the database or .env file to S3';
 
-	// --
-
-	public function __construct()
+	public function handle(): int
 	{
-		parent::__construct();
-	}
-
-	public function handle()
-	{
-		if (env('AWS_ACCESS_KEY_ID') === null)
-			return $this->error('No AWS credentials found.');
-
 		$type = $this->argument('type');
 
-		switch ($type)
+		if (!in_array($type, ['db', 'env']))
 		{
-			case 'db':
-				return $this->runBackupDB();
-
-			case 'env':
-				return $this->runBackupEnv();
-
-			default:
-				$this->error('Invalid type: ' . $type);
-				exit;
+			$this->error('Invalid type: ' . $type . ' (expected db or env)');
+			return self::INVALID;
 		}
+
+		if (!$this->loadCredentials())
+			return self::FAILURE;
+
+		return $type === 'db' ? $this->backupDatabase() : $this->backupEnv();
 	}
 
-	private function runBackupEnv()
+	private function backupEnv(): int
 	{
 		if (config('app.env') !== 'local')
-			return $this->error('Only run on local. #security');
+		{
+			$this->error('The .env backup can only be run locally.');
+			return self::FAILURE;
+		}
 
-		$remote_dir = config('app.env') . '-' . config('app.name');
-		$remote_dir = Str::slug($remote_dir);
+		$remote = $this->remoteDir();
 
 		try
 		{
-			Storage::disk('s3')->putFileAs($remote_dir, new File(base_path('.env')), 'current.env');
+			$this->disk()->putFileAs($remote, base_path('.env'), 'current.env');
 		}
-		catch (\Exception $e)
+		catch (Throwable $e)
 		{
 			$this->error('Error creating backup: ' . $e->getMessage());
-			exit;
+			return self::FAILURE;
 		}
 
-		$this->info('Backup successful: ' . $remote_dir);
+		$this->info('Backup successful: ' . $remote . '/current.env');
+		return self::SUCCESS;
 	}
 
-	private function runBackupDB()
+	private function backupDatabase(): int
 	{
-		$dir = $this->getStorageDir();
+		$db = $this->databaseConfig();
+		if ($db === null)
+			return self::FAILURE;
 
-		$remote_dir = config('app.env') . '-' . config('app.name');
-		$remote_dir = Str::slug($remote_dir);
+		$dir = $this->storageDir();
+		$remote = $this->remoteDir();
 
-		$filename = 'db-' . date('Ymd-His') . '-' . substr(md5(microtime()), 0, 5) . '.sql.gz';
+		$filename = 'db-' . date('Ymd-His') . '-' . Str::lower(Str::random(5)) . '.sql';
+		$sql = $dir . '/' . $filename;
+		$gz = $sql . '.gz';
 
-		$password = config('database.connections.mysql.password');
-		if ($password) $password = '-p\'' . $password . '\'';
+		// -- Clear out previous local backups
+		foreach (glob($dir . '/*') as $file)
+			unlink($file);
 
-		$command = sprintf('mysqldump --no-tablespaces %s -u \'%s\' %s | gzip > %s',
-			config('database.connections.mysql.database'),
-			config('database.connections.mysql.username'),
-			$password,
-			$dir . '/' . $filename
+		// -- Dump and compress
+		$command = sprintf('mysqldump --no-tablespaces %s --result-file=%s %s',
+			$this->mysqlArguments($db),
+			escapeshellarg($sql),
+			escapeshellarg($db['database'])
 		);
 
+		if (!$this->shell($command, $this->mysqlEnv($db)) || !$this->shell('gzip -f ' . escapeshellarg($sql)))
+		{
+			@unlink($sql);
+			@unlink($gz);
+			return self::FAILURE;
+		}
+
+		// -- Upload
 		try
 		{
-			// -- Create backup
-			exec($command);
-
-			// -- Delete other backups
-			$files = glob($dir . '/*');
-			foreach ($files as $file)
-				if (basename($file) != $filename)
-					unlink($file);
-
-			// -- Upload backup
-			Storage::disk('s3')->putFileAs($remote_dir, new File($dir . '/' . $filename), $filename);
-			Storage::disk('s3')->delete($remote_dir . '/current.sql.gz');
-			Storage::disk('s3')->copy($remote_dir . '/' . $filename, $remote_dir . '/current.sql.gz');
+			$disk = $this->disk();
+			$disk->putFileAs($remote, $gz, basename($gz));
+			$disk->delete($remote . '/current.sql.gz');
+			$disk->copy($remote . '/' . basename($gz), $remote . '/current.sql.gz');
 		}
-		catch (\Exception $e)
+		catch (Throwable $e)
 		{
 			$this->error('Error creating backup: ' . $e->getMessage());
-			exit;
+			return self::FAILURE;
 		}
 
-		$this->info('Backup successful: ' . $remote_dir);
-	}
-
-	private function getStorageDir()
-	{
-		$dir = storage_path('app/backups');
-
-		if (!is_dir($dir))
-			mkdir($dir, 0777, true);
-
-		return $dir;
+		$this->info('Backup successful: ' . $remote . '/' . basename($gz));
+		return self::SUCCESS;
 	}
 }

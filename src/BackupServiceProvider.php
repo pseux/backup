@@ -8,7 +8,7 @@ use Pseux\Backup\Commands\BackupImport;
 
 class BackupServiceProvider extends ServiceProvider
 {
-	public function boot()
+	public function boot(): void
 	{
 		if ($this->app->runningInConsole())
 		{
@@ -17,9 +17,5 @@ class BackupServiceProvider extends ServiceProvider
 				BackupImport::class,
 			]);
 		}
-	}
-
-	public function register()
-	{
 	}
 }

@@ -2,106 +2,98 @@
 
 namespace Pseux\Backup\Commands;
 
-use Illuminate\Http\File;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Console\ConfirmableTrait;
+use Throwable;
 
 class BackupImport extends BaseBackup
 {
-	protected $signature = 'backup:import {type} {source?}';
-	protected $description = 'Import previous backups';
+	use ConfirmableTrait;
 
-	// --
+	protected $signature = 'backup:import
+		{type : What to import: db or env}
+		{source? : Environment the backup was taken from (defaults to the current one)}
+		{--force : Run without confirmation when in production}';
 
-	public function __construct()
+	protected $description = 'Restore the database or .env file from S3';
+
+	public function handle(): int
 	{
-		parent::__construct();
-	}
-
-	public function handle()
-	{
-		if (env('AWS_ACCESS_KEY_ID') === null)
-			return $this->error('No AWS credentials found.');
-
 		$type = $this->argument('type');
-		$source = $this->argument('source') ?: config('app.env');
 
-		switch ($type)
+		if (!in_array($type, ['db', 'env']))
 		{
-			case 'db':
-				return $this->runImportDB($source);
-
-			case 'env':
-				return $this->runImportEnv($source);
-
-			default:
-				$this->error('Invalid type: ' . $type);
-				exit;
+			$this->error('Invalid type: ' . $type . ' (expected db or env)');
+			return self::INVALID;
 		}
+
+		if (!$this->confirmToProceed() || !$this->loadCredentials())
+			return self::FAILURE;
+
+		$remote = $this->remoteDir($this->argument('source'));
+
+		return $type === 'db' ? $this->importDatabase($remote) : $this->importEnv($remote);
 	}
 
-	private function runImportEnv($source)
+	private function importEnv(string $remote): int
 	{
-		$remote_dir = $source . '-' . config('app.name');
-		$remote_dir = Str::slug($remote_dir);
+		$path = $remote . '/current.env';
 
 		try
 		{
-			$file = Storage::disk('s3')->get($remote_dir . '/current.env');
-			Storage::createLocalDriver(['root' => base_path()])->put('.env', $file);
+			$contents = $this->disk()->get($path);
 		}
-		catch (\Exception $e)
+		catch (Throwable $e)
 		{
-			$this->error('Remote backup not available.');
-			exit;
+			$this->error('Remote backup not available: ' . $e->getMessage());
+			return self::FAILURE;
 		}
 
-		$this->info('Backup loaded: ' . $remote_dir);
+		file_put_contents(base_path('.env'), $contents);
+
+		$this->info('Backup loaded: ' . $path);
+		return self::SUCCESS;
 	}
 
-	private function runImportDB($source)
+	private function importDatabase(string $remote): int
 	{
-		$remote_dir = $source . '-' . config('app.name');
-		$remote_dir = Str::slug($remote_dir);
+		$db = $this->databaseConfig();
+		if ($db === null)
+			return self::FAILURE;
 
+		$path = $remote . '/current.sql.gz';
+		$gz = $this->storageDir() . '/import.sql.gz';
+		$sql = $this->storageDir() . '/import.sql';
+
+		// -- Download
 		try
 		{
-			// Download file
-			$file = Storage::disk('s3')->get($remote_dir . '/current.sql.gz');
-			if ($file === false)
-			{
-				$this->error('Remote backup not accessible.');
-				exit;
-			}
-
-			Storage::disk('local')->put('database.sql.gz', $file);
-
-			// Unzip file
-			$command = sprintf('gunzip -f %s', storage_path('app/database.sql.gz'));
-			exec($command);
-
-			// Import SQL file
-			$password = config('database.connections.mysql.password');
-			if ($password) $password = '-p\'' . $password . '\'';
-
-			$command = sprintf('mysql -u \'%s\' %s %s < %s',
-				config('database.connections.mysql.username'),
-				$password,
-				config('database.connections.mysql.database'),
-				storage_path('app/database.sql')
-			);
-
-			exec($command);
-
-			// Remove file
-			Storage::disk('local')->delete('database.sql');
+			$stream = $this->disk()->readStream($path);
 		}
-		catch (\Exception $e)
+		catch (Throwable $e)
 		{
-			$this->error('Remote backup not available.');
-			exit;
+			$this->error('Remote backup not available: ' . $e->getMessage());
+			return self::FAILURE;
 		}
 
-		$this->info('Backup loaded: ' . $remote_dir);
+		file_put_contents($gz, $stream);
+		fclose($stream);
+
+		// -- Unzip and import
+		$command = sprintf('mysql %s %s < %s',
+			$this->mysqlArguments($db),
+			escapeshellarg($db['database']),
+			escapeshellarg($sql)
+		);
+
+		$ok = $this->shell('gunzip -f ' . escapeshellarg($gz)) && $this->shell($command, $this->mysqlEnv($db));
+
+		@unlink($gz);
+		@unlink($sql);
+
+		if (!$ok)
+			return self::FAILURE;
+
+		$this->info('Backup loaded: ' . $path);
+		return self::SUCCESS;
 	}
 }
