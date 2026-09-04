@@ -35,7 +35,8 @@ class Backup extends BaseBackup
 			unlink($file);
 
 		// -- Dump and compress
-		$command = sprintf('mysqldump --no-tablespaces %s --result-file=%s %s',
+		$command = sprintf('mysqldump %s %s --result-file=%s %s',
+			$this->mysqldumpOptions(),
 			$this->mysqlArguments($db),
 			escapeshellarg($sql),
 			escapeshellarg($db['database'])

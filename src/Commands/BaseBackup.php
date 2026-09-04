@@ -93,6 +93,24 @@ abstract class BaseBackup extends Command
 		return implode(' ', array_map('escapeshellarg', $args));
 	}
 
+	/**
+	 * Options for mysqldump.
+	 *
+	 * MySQL's mysqldump embeds SET @@GLOBAL.GTID_PURGED when GTIDs are on,
+	 * which makes the dump refuse to import into any server that already has
+	 * GTIDs, including the one it came from. MariaDB's mysqldump has no such
+	 * option, so only pass it where it is supported.
+	 */
+	protected function mysqldumpOptions(): string
+	{
+		$options = ['--no-tablespaces', '--single-transaction'];
+
+		if (str_contains(Process::run('mysqldump --help')->output(), 'set-gtid-purged'))
+			$options[] = '--set-gtid-purged=OFF';
+
+		return implode(' ', $options);
+	}
+
 	protected function mysqlEnv(array $db): array
 	{
 		return empty($db['password']) ? [] : ['MYSQL_PWD' => $db['password']];
