@@ -8,7 +8,8 @@ use Throwable;
 class BackupFiles extends BaseBackup
 {
 	protected $signature = 'backup:files
-		{--prune : Delete files from S3 that no longer exist locally}';
+		{--prune : Delete files from S3 that no longer exist locally}
+		{--profile= : AWS profile to use instead of the default lookup}';
 
 	protected $description = 'Sync storage/app to S3, uploading only new or changed files';
 

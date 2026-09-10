@@ -2,13 +2,13 @@
 
 namespace Pseux\Backup\Commands;
 
-use Illuminate\Support\Str;
 use PDO;
 use Throwable;
 
 class Backup extends BaseBackup
 {
-	protected $signature = 'backup';
+	protected $signature = 'backup
+		{--profile= : AWS profile to use instead of the default lookup}';
 	protected $description = 'Dump the database and upload it to S3';
 
 	public function handle(): int
@@ -27,9 +27,8 @@ class Backup extends BaseBackup
 		$dir = $this->storageDir();
 		$remote = $this->remoteDir();
 
-		$filename = 'db-' . date('Ymd-His') . '-' . Str::lower(Str::random(5)) . '.' . $this->dumpExtension($db);
-		$dump = $dir . '/' . $filename;
-		$gz = $dump . '.gz';
+		$gz = $dir . '/' . $this->dumpFilename($this->dumpExtension($db));
+		$dump = substr($gz, 0, -3);
 
 		// -- Clear out previous local backups
 		foreach (glob($dir . '/*') as $file)
@@ -45,12 +44,10 @@ class Backup extends BaseBackup
 			return self::FAILURE;
 		}
 
-		// -- Upload
+		// -- Upload. A single PutObject, so a write-only key is enough.
 		try
 		{
 			$disk->putFileAs($remote, $gz, basename($gz));
-			$disk->delete($remote . '/current.sql.gz');
-			$disk->copy($remote . '/' . basename($gz), $remote . '/current.sql.gz');
 		}
 		catch (Throwable $e)
 		{

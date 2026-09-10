@@ -11,7 +11,8 @@ class BackupImport extends BaseBackup
 
 	protected $signature = 'backup:import
 		{source? : Environment the backup was taken from (defaults to the current one)}
-		{--force : Run without confirmation when in production}';
+		{--force : Run without confirmation when in production}
+		{--profile= : AWS profile to use, for a key that can read the bucket}';
 
 	protected $description = 'Restore the latest database backup from S3';
 
@@ -32,9 +33,29 @@ class BackupImport extends BaseBackup
 		}
 
 		$extension = $this->dumpExtension($db);
-		$path = $this->remoteDir($this->argument('source')) . '/current.' . $extension . '.gz';
+		$remote = $this->remoteDir($this->argument('source'));
 		$dump = $this->storageDir() . '/import.' . $extension;
 		$gz = $dump . '.gz';
+
+		// -- Find the newest dump. Names start with a timestamp, so they sort.
+		try
+		{
+			$dumps = array_filter($disk->files($remote), fn ($path) => $this->isDump($path, $extension));
+		}
+		catch (Throwable $e)
+		{
+			$this->error('Could not list backups in ' . $remote . '/: ' . $e->getMessage());
+			return self::FAILURE;
+		}
+
+		if (!$dumps)
+		{
+			$this->error('No backups found in ' . $remote . '/');
+			return self::FAILURE;
+		}
+
+		rsort($dumps);
+		$path = $dumps[0];
 
 		// -- Download
 		try
@@ -43,7 +64,8 @@ class BackupImport extends BaseBackup
 		}
 		catch (Throwable $e)
 		{
-			$this->error('Remote backup not available: ' . $e->getMessage());
+			$this->error('Could not download ' . $path . ': ' . $e->getMessage());
+			$this->line('  If the backup key is write-only, run again with --profile to use one that can read the bucket.');
 			return self::FAILURE;
 		}
 

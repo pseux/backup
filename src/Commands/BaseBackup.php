@@ -3,6 +3,7 @@
 namespace Pseux\Backup\Commands;
 
 use Aws\Configuration\ConfigurationResolver;
+use Aws\Credentials\CredentialProvider;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Process;
@@ -15,20 +16,27 @@ abstract class BaseBackup extends Command
 	/**
 	 * The S3 disk used for backups.
 	 *
-	 * Starts from the app's own s3 disk config. Anything left empty there is
-	 * resolved by the AWS SDK the standard way: credentials and region from
-	 * AWS_* environment variables, ~/.aws/credentials and ~/.aws/config, or
-	 * the instance role.
+	 * Credentials come from, in order: the profile named by --profile or
+	 * AWS_PROFILE; the app's own s3 disk if it has a key and secret; a
+	 * profile called `backup` if one exists in ~/.aws; and finally the AWS
+	 * SDK's usual chain (environment, default profile, instance role).
 	 *
 	 * The bucket is AWS_BACKUP_BUCKET if set, so backups can go somewhere
 	 * other than the bucket the app uses for its own storage. Otherwise it
-	 * is the app's bucket, falling back to `backup_bucket` in ~/.aws/config
-	 * so one server-wide bucket can serve every site without touching each
-	 * site's .env.
+	 * is the app's bucket, falling back to `backup_bucket` in the chosen
+	 * profile's section of ~/.aws/config, so one server-wide bucket can
+	 * serve every site without touching each site's .env.
 	 */
 	protected function disk(): Filesystem
 	{
 		$config = config('filesystems.disks.s3') ?: [];
+		$profile = $this->profile(!empty($config['key']) && !empty($config['secret']));
+
+		if ($profile)
+		{
+			unset($config['key'], $config['secret'], $config['token']);
+			$config['profile'] = $profile;
+		}
 
 		if ($override = getenv('AWS_BACKUP_BUCKET'))
 			$config['bucket'] = $override;
@@ -39,13 +47,78 @@ abstract class BaseBackup extends Command
 			// from ~/.aws/config. Laravel's stock .env ships a placeholder
 			// region, which must not override the one alongside the bucket.
 			unset($config['region']);
-			$config['bucket'] = ConfigurationResolver::resolve('backup_bucket', null, 'string');
+			$config['bucket'] = ConfigurationResolver::ini('backup_bucket', 'string', $profile);
 		}
 
 		if (empty($config['bucket']))
 			throw new RuntimeException('No backup bucket configured. Set backup_bucket in ~/.aws/config (or AWS_BUCKET in .env).');
 
 		return Storage::build(['driver' => 's3', 'throw' => true] + $config);
+	}
+
+	/**
+	 * The AWS profile to use, or null to leave it to the SDK.
+	 *
+	 * An explicit choice (--profile, or AWS_PROFILE in the environment or
+	 * the app's .env) always wins. Otherwise the app's own credentials are
+	 * respected if it has any, then a `backup` profile is used if one
+	 * exists, so a server can keep a dedicated backup key without every
+	 * site having to name it.
+	 */
+	protected function profile(bool $appHasCredentials): ?string
+	{
+		if ($this->hasOption('profile') && $this->option('profile'))
+			return $this->option('profile');
+
+		if ($profile = getenv('AWS_PROFILE'))
+			return $profile;
+
+		if ($appHasCredentials)
+			return null;
+
+		return $this->profileExists('backup') ? 'backup' : null;
+	}
+
+	/**
+	 * Whether a profile is defined in ~/.aws/credentials or ~/.aws/config,
+	 * honouring the SDK's environment variables for relocating either file.
+	 */
+	protected function profileExists(string $name): bool
+	{
+		$home = CredentialProvider::getHomeDir();
+		$files = [
+			[getenv('AWS_SHARED_CREDENTIALS_FILE') ?: $home . '/.aws/credentials', [$name]],
+			[getenv('AWS_CONFIG_FILE') ?: $home . '/.aws/config', ['profile ' . $name, $name]],
+		];
+
+		foreach ($files as [$file, $sections])
+		{
+			if (!is_readable($file) || !($data = @\Aws\parse_ini_file($file, true, INI_SCANNER_RAW)))
+				continue;
+
+			foreach ($sections as $section)
+				if (isset($data[$section]))
+					return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Name of a database dump for the given extension. The timestamp comes
+	 * first so a plain sort of a folder listing puts the newest last.
+	 */
+	protected function dumpFilename(string $extension): string
+	{
+		return 'db-' . date('Ymd-His') . '-' . Str::lower(Str::random(5)) . '.' . $extension . '.gz';
+	}
+
+	/**
+	 * Whether a remote path is a database dump with the given extension.
+	 */
+	protected function isDump(string $path, string $extension): bool
+	{
+		return (bool) preg_match('/\/db-\d{8}-\d{6}-[a-z0-9]+\.' . preg_quote($extension, '/') . '\.gz$/', $path);
 	}
 
 	protected function remoteDir(?string $env = null): string

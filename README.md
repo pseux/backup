@@ -12,10 +12,10 @@ Requires PHP 8.1+ and Laravel 10 or newer, with `gzip` and `gunzip` available on
 
 Nothing needs to go in the app's `.env`. Credentials, region and bucket are read from the standard AWS locations in the home directory of the user running the command, so one server-wide setup covers every site on the box.
 
-`~/.aws/credentials` (or just run `aws configure`):
+`~/.aws/credentials`:
 
 ```ini
-[default]
+[backup]
 aws_access_key_id = AKIA...
 aws_secret_access_key = ...
 ```
@@ -23,33 +23,63 @@ aws_secret_access_key = ...
 `~/.aws/config`:
 
 ```ini
-[default]
+[profile backup]
 region = eu-west-2
 backup_bucket = my-server-backups
 ```
 
-Both files should be `chmod 600`. On EC2 or ECS you can leave out the credentials file entirely and the instance role is used.
+Both files should be `chmod 600`. A `backup` profile is used when one exists; otherwise the `default` profile, so an existing setup that only has `[default]` keeps working. On EC2 or ECS you can leave out the credentials file entirely and the instance role is used.
 
 Notes:
 
 - `backup_bucket` is a custom key; the `aws` CLI ignores it.
-- `AWS_PROFILE` selects a different profile.
-- If the app's own `s3` disk has a bucket configured (`AWS_BUCKET` in `.env`), that bucket and those credentials win, so a site can opt out of the server default.
+- `--profile` on any command, or `AWS_PROFILE` in the environment or the app's `.env`, picks a specific profile and skips the lookup above.
+- If the app's own `s3` disk has credentials and a bucket configured (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_BUCKET` in `.env`), those win, so a site can opt out of the server default.
 - `AWS_BACKUP_BUCKET` overrides the bucket either way, so an app that keeps its own files in one bucket can back up to another. Set it in `.env` alongside `AWS_BUCKET`, or on a cron line.
 
-Backups are stored in the bucket under `{APP_ENV}-{APP_NAME}/`, slugified (for example `production-my-app/`). Each backup is kept as a timestamped file, and the latest one is also copied to `current.sql.gz` (or `current.sqlite.gz` for SQLite). Synced files go in a `files/` folder alongside them.
+Backups are stored in the bucket under `{APP_ENV}-{APP_NAME}/`, slugified (for example `production-my-app/`). Each dump is a timestamped file such as `db-20260910-020000-k3x9q.sql.gz` (`.sqlite.gz` for SQLite). Synced files go in a `files/` folder alongside them.
+
+Old dumps are never deleted by the package. Add a lifecycle rule to the bucket to expire them after however long you want to keep them.
+
+### Permissions
+
+A nightly backup only ever uploads, so the key in `~/.aws/credentials` can be write-only. If it leaks, nothing can be downloaded or deleted with it. This IAM policy is enough for `backup` and `backup:files`:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::my-server-backups"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::my-server-backups/*"
+    }
+  ]
+}
+```
+
+`backup:import` also needs `s3:GetObject`, and `backup:files --prune` needs `s3:DeleteObject`. Either grant those to the same key for sites where that's acceptable, or keep a second profile with read access somewhere safer and pass it with `--profile` when restoring.
 
 ## Commands
 
 	php artisan backup          # dump the default database connection and upload it
-	php artisan backup:import   # restore current.sql.gz into the default database connection
+	php artisan backup:import   # restore the newest dump into the default database connection
 	php artisan backup:files    # sync storage/app to S3
 
-`backup:import` takes an optional source environment, so you can pull a production backup into a local database:
+Every command takes `--profile=name` to use a specific AWS profile.
+
+`backup:import` finds the newest dump in the site's folder. It takes an optional source environment, so you can pull a production backup into a local database:
 
 	php artisan backup:import production
 
-When run in production, `backup:import` asks for confirmation first. Pass `--force` to skip the prompt.
+When run in production, `backup:import` asks for confirmation first. Pass `--force` to skip the prompt. If the server's backup key is write-only, restore with a profile that can read the bucket:
+
+	php artisan backup:import production --profile=restore
 
 The backup has to match the local driver: a MySQL dump can't be restored into SQLite or the other way round. For SQLite, the restore replaces the database file outright, so anything written since the backup is lost.
 
@@ -77,6 +107,7 @@ The scheduler runs as whichever user owns the cron entry, so the `~/.aws/` files
 
 ## Upgrading from earlier versions
 
-- `backup db` is now just `backup`, and `backup:import db` is `backup:import`. Update any schedules.
-- The `.env` backup and restore have been removed.
-- `~/.backupconfig` is no longer read. Move the key and secret to `~/.aws/credentials`, and the region and bucket to `~/.aws/config` as above.
+- 2.2: `current.sql.gz` is no longer written; `backup:import` picks the newest timestamped dump instead. Any `current.*` files already in the bucket can be deleted. Retention is now the bucket's job, so add a lifecycle rule if you didn't have one.
+- 2.2: a `backup` profile in `~/.aws` is preferred over `default` when present. Nothing changes if you only have `[default]`.
+- 2.0: `backup db` is now just `backup`, and `backup:import db` is `backup:import`. Update any schedules.
+- 2.0: the `.env` backup and restore have been removed.
