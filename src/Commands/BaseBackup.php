@@ -46,8 +46,10 @@ abstract class BaseBackup extends Command
 			// The app has no S3 setup of its own, so take bucket and region
 			// from ~/.aws/config. Laravel's stock .env ships a placeholder
 			// region, which must not override the one alongside the bucket.
-			unset($config['region']);
+			// The SDK only reads the default profile's region on its own, so
+			// the chosen profile's region has to be looked up here.
 			$config['bucket'] = ConfigurationResolver::ini('backup_bucket', 'string', $profile);
+			$config['region'] = ConfigurationResolver::env('region') ?? ConfigurationResolver::ini('region', 'string', $profile);
 		}
 
 		if (empty($config['bucket']))
