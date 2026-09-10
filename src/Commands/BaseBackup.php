@@ -14,69 +14,62 @@ use RuntimeException;
 abstract class BaseBackup extends Command
 {
 	/**
-	 * The S3 disk used for backups.
+	 * The disk backups are written to.
 	 *
-	 * Credentials come from, in order: the profile named by --profile or
-	 * AWS_PROFILE; the app's own s3 disk if it has a key and secret; a
-	 * profile called `backup` if one exists in ~/.aws; and finally the AWS
-	 * SDK's usual chain (environment, default profile, instance role).
-	 *
-	 * The bucket is AWS_BACKUP_BUCKET if set, so backups can go somewhere
-	 * other than the bucket the app uses for its own storage. Otherwise it
-	 * is the app's bucket, falling back to `backup_bucket` in the chosen
-	 * profile's section of ~/.aws/config, so one server-wide bucket can
-	 * serve every site without touching each site's .env.
+	 * Built from an AWS profile: credentials from ~/.aws/credentials, and
+	 * region and bucket from that profile's section of ~/.aws/config, so one
+	 * server-wide setup covers every site. If the app defines a `backups`
+	 * disk in config/filesystems.php, its keys override the built ones, so
+	 * a site can name its own bucket, profile or region, or point somewhere
+	 * else entirely by giving a different driver.
 	 */
 	protected function disk(): Filesystem
 	{
-		$config = config('filesystems.disks.s3') ?: [];
-		$profile = $this->profile(!empty($config['key']) && !empty($config['secret']));
+		$app = config('filesystems.disks.backups') ?: [];
 
-		if ($profile)
-		{
+		if (!empty($app['driver']) && $app['driver'] !== 's3')
+			return Storage::build(['throw' => true] + $app);
+
+		$profile = $this->profile($app);
+		$config = array_merge([
+			'driver' => 's3',
+			'throw' => true,
+			'profile' => $profile,
+			'region' => ConfigurationResolver::env('region') ?? ConfigurationResolver::ini('region', 'string', $profile),
+			'bucket' => ConfigurationResolver::ini('bucket', 'string', $profile) ?? ConfigurationResolver::ini('backup_bucket', 'string', $profile),
+		], $app);
+
+		// Credentials given in the app's disk are used as they are; a profile
+		// would otherwise take over. An explicit --profile wins over both.
+		if ($this->option('profile'))
 			unset($config['key'], $config['secret'], $config['token']);
-			$config['profile'] = $profile;
-		}
-
-		if ($override = getenv('AWS_BACKUP_BUCKET'))
-			$config['bucket'] = $override;
+		elseif (!empty($config['key']) && !empty($config['secret']))
+			unset($config['profile']);
 
 		if (empty($config['bucket']))
-		{
-			// The app has no S3 setup of its own, so take bucket and region
-			// from ~/.aws/config. Laravel's stock .env ships a placeholder
-			// region, which must not override the one alongside the bucket.
-			// The SDK only reads the default profile's region on its own, so
-			// the chosen profile's region has to be looked up here.
-			$config['bucket'] = ConfigurationResolver::ini('backup_bucket', 'string', $profile);
-			$config['region'] = ConfigurationResolver::env('region') ?? ConfigurationResolver::ini('region', 'string', $profile);
-		}
+			throw new RuntimeException('No backup bucket configured. Set bucket in the profile\'s section of ~/.aws/config, or define a backups disk in config/filesystems.php.');
 
-		if (empty($config['bucket']))
-			throw new RuntimeException('No backup bucket configured. Set backup_bucket in ~/.aws/config (or AWS_BUCKET in .env).');
-
-		return Storage::build(['driver' => 's3', 'throw' => true] + $config);
+		return Storage::build(array_filter($config, fn ($value) => $value !== null));
 	}
 
 	/**
 	 * The AWS profile to use, or null to leave it to the SDK.
 	 *
-	 * An explicit choice (--profile, or AWS_PROFILE in the environment or
-	 * the app's .env) always wins. Otherwise the app's own credentials are
-	 * respected if it has any, then a `backup` profile is used if one
-	 * exists, so a server can keep a dedicated backup key without every
-	 * site having to name it.
+	 * In order: --profile, the app's backups disk, AWS_PROFILE, then a
+	 * profile called `backup` if one exists, so a server can keep a
+	 * dedicated backup key without every site having to name it. With
+	 * none of those the SDK's own chain applies, ending in `default`.
 	 */
-	protected function profile(bool $appHasCredentials): ?string
+	protected function profile(array $app): ?string
 	{
-		if ($this->hasOption('profile') && $this->option('profile'))
+		if ($this->option('profile'))
 			return $this->option('profile');
+
+		if (!empty($app['profile']))
+			return $app['profile'];
 
 		if ($profile = getenv('AWS_PROFILE'))
 			return $profile;
-
-		if ($appHasCredentials)
-			return null;
 
 		return $this->profileExists('backup') ? 'backup' : null;
 	}

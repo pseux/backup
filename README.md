@@ -25,19 +25,38 @@ aws_secret_access_key = ...
 ```ini
 [profile backup]
 region = eu-west-2
-backup_bucket = my-server-backups
+bucket = my-server-backups
 ```
 
-Both files should be `chmod 600`. A `backup` profile is used when one exists; otherwise the `default` profile, so an existing setup that only has `[default]` keeps working. On EC2 or ECS you can leave out the credentials file entirely and the instance role is used.
+Both files should be `chmod 600`. A `backup` profile is used when one exists; otherwise the `default` profile, so a setup that only has `[default]` works too. On EC2 or ECS you can leave out the credentials file entirely and the instance role is used.
 
-Notes:
+`bucket` is a custom key that the `aws` CLI ignores. `backup_bucket`, the name used by earlier versions, is still read as a fallback.
 
-- `backup_bucket` is a custom key; the `aws` CLI ignores it.
-- `--profile` on any command, or `AWS_PROFILE` in the environment or the app's `.env`, picks a specific profile and skips the lookup above.
-- If the app's own `s3` disk has credentials and a bucket configured (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_BUCKET` in `.env`), those win, so a site can opt out of the server default.
-- `AWS_BACKUP_BUCKET` overrides the bucket either way, so an app that keeps its own files in one bucket can back up to another. Set it in `.env` alongside `AWS_BUCKET`, or on a cron line.
+### Per-site overrides
 
-Backups are stored in the bucket under `{APP_ENV}-{APP_NAME}/`, slugified (for example `production-my-app/`). Each dump is a timestamped file such as `db-20260910-020000-k3x9q.sql.gz` (`.sqlite.gz` for SQLite). Synced files go in a `files/` folder alongside them.
+A site can override any of that with a `backups` disk in `config/filesystems.php`. Keys you set win; keys you leave out are filled in from the profile as above. So a site on a shared server that keeps its own bucket only needs:
+
+```php
+'backups' => [
+    'bucket' => 'my-app-backups',
+],
+```
+
+A site on a server with no `~/.aws/config` at all can carry the whole thing, with only the credentials file on the box:
+
+```php
+'backups' => [
+    'profile' => 'my-app-backup',
+    'region' => 'eu-west-2',
+    'bucket' => 'my-app-backups',
+],
+```
+
+Set `key` and `secret` instead of `profile` to use credentials from the app's own `.env`, or give a different `driver` (`local`, `sftp`, or `s3` with an `endpoint` for R2 or MinIO) to back up somewhere other than S3. With a non-S3 driver the array is used as it is.
+
+`--profile=name` on any command, or `AWS_PROFILE` in the environment, picks a profile ahead of the disk and the lookup above. That's how a restore uses a key that can read when the server's own key can't.
+
+Backups are stored under `{APP_ENV}-{APP_NAME}/`, slugified (for example `production-my-app/`). Each dump is a timestamped file such as `db-20260910-020000-k3x9q.sql.gz` (`.sqlite.gz` for SQLite). Synced files go in a `files/` folder alongside them.
 
 Old dumps are never deleted by the package. Add a lifecycle rule to the bucket to expire them after however long you want to keep them.
 
@@ -109,5 +128,7 @@ The scheduler runs as whichever user owns the cron entry, so the `~/.aws/` files
 
 - 2.2: `current.sql.gz` is no longer written; `backup:import` picks the newest timestamped dump instead. Any `current.*` files already in the bucket can be deleted. Retention is now the bucket's job, so add a lifecycle rule if you didn't have one.
 - 2.2: a `backup` profile in `~/.aws` is preferred over `default` when present. Nothing changes if you only have `[default]`.
+- 2.2: the config key is now `bucket`; `backup_bucket` still works.
+- 2.2: the app's `s3` disk (`AWS_BUCKET` and friends in `.env`) is no longer consulted. A site that relied on it should define a `backups` disk instead, see above. `AWS_BACKUP_BUCKET` from 2.1.1 is gone for the same reason.
 - 2.0: `backup db` is now just `backup`, and `backup:import db` is `backup:import`. Update any schedules.
 - 2.0: the `.env` backup and restore have been removed.
