@@ -33,8 +33,9 @@ Both files should be `chmod 600`. On EC2 or ECS you can leave out the credential
 Notes:
 
 - `backup_bucket` is a custom key; the `aws` CLI ignores it.
-- `AWS_PROFILE` selects a different profile, and `AWS_BACKUP_BUCKET` overrides the bucket, which is handy in a cron line.
+- `AWS_PROFILE` selects a different profile.
 - If the app's own `s3` disk has a bucket configured (`AWS_BUCKET` in `.env`), that bucket and those credentials win, so a site can opt out of the server default.
+- `AWS_BACKUP_BUCKET` overrides the bucket either way, so an app that keeps its own files in one bucket can back up to another. Set it in `.env` alongside `AWS_BUCKET`, or on a cron line.
 
 Backups are stored in the bucket under `{APP_ENV}-{APP_NAME}/`, slugified (for example `production-my-app/`). Each backup is kept as a timestamped file, and the latest one is also copied to `current.sql.gz` (or `current.sqlite.gz` for SQLite). Synced files go in a `files/` folder alongside them.
 

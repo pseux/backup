@@ -18,13 +18,20 @@ abstract class BaseBackup extends Command
 	 * Starts from the app's own s3 disk config. Anything left empty there is
 	 * resolved by the AWS SDK the standard way: credentials and region from
 	 * AWS_* environment variables, ~/.aws/credentials and ~/.aws/config, or
-	 * the instance role. The bucket falls back to `backup_bucket` in
-	 * ~/.aws/config (or AWS_BACKUP_BUCKET), so one server-wide bucket can
-	 * serve every site without touching each site's .env.
+	 * the instance role.
+	 *
+	 * The bucket is AWS_BACKUP_BUCKET if set, so backups can go somewhere
+	 * other than the bucket the app uses for its own storage. Otherwise it
+	 * is the app's bucket, falling back to `backup_bucket` in ~/.aws/config
+	 * so one server-wide bucket can serve every site without touching each
+	 * site's .env.
 	 */
 	protected function disk(): Filesystem
 	{
 		$config = config('filesystems.disks.s3') ?: [];
+
+		if ($override = getenv('AWS_BACKUP_BUCKET'))
+			$config['bucket'] = $override;
 
 		if (empty($config['bucket']))
 		{
