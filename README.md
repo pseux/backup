@@ -34,10 +34,11 @@ Both files should be `chmod 600`. A `backup` profile is used when one exists; ot
 
 ### Per-site overrides
 
-A site can override any of that with a `backups` disk in `config/filesystems.php`. Keys you set win; keys you leave out are filled in from the profile as above. So a site on a shared server that keeps its own bucket only needs:
+A site can override any of that with a `backups` disk in `config/filesystems.php`. Keys you set win; keys you leave out are filled in from the profile as above. Laravel checks every disk for a `driver` at boot, so that one key is always required. A site on a shared server that keeps its own bucket only needs:
 
 ```php
 'backups' => [
+    'driver' => 's3',
     'bucket' => 'my-app-backups',
 ],
 ```
@@ -46,6 +47,7 @@ A site on a server with no `~/.aws/config` at all can carry the whole thing, wit
 
 ```php
 'backups' => [
+    'driver' => 's3',
     'profile' => 'my-app-backup',
     'region' => 'eu-west-2',
     'bucket' => 'my-app-backups',
