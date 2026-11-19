@@ -104,11 +104,43 @@ When run in production, `backup:import` asks for confirmation first. Pass `--for
 
 The backup has to match the local driver: a MySQL dump can't be restored into SQLite or the other way round. For SQLite, the restore replaces the database file outright, so anything written since the backup is lost.
 
-`backup:files` mirrors `storage/app` (minus dotfiles and the package's own `backups/` folder) to `files/` in the site's S3 folder. It lists the remote folder once, then uploads only files that are new, or whose size or modified time differs, so a nightly run with few changes costs almost nothing. Sites with nothing in `storage/app` are skipped.
+`backup:files` mirrors `storage/app` (minus dotfiles, the package's own `backups/` folder, and anything in [`.backupignore`](#excluding-files)) to `files/` in the site's S3 folder. It lists the remote folder once, then uploads only files that are new, or whose size or modified time differs, so a nightly run with few changes costs almost nothing. Sites with nothing in `storage/app` are skipped.
 
 Files deleted locally are left in S3, so an accidental delete on the server isn't repeated in the backup. To remove them, run with `--prune`:
 
 	php artisan backup:files --prune
+
+### Backing up folders outside storage/app
+
+`backup:files` only looks in `storage/app`. To back up a folder that lives somewhere else, move it into `storage/app` and symlink it back, the same way Laravel serves `storage/app/public` from `public/storage`. List the link in `config/filesystems.php`:
+
+```php
+'links' => [
+    public_path('storage') => storage_path('app/public'),
+    public_path('images/flags') => storage_path('app/flags'),
+],
+```
+
+Then move the folder and create the links:
+
+	mv public/images/flags storage/app/flags
+	php artisan storage:link
+
+If the folder was in git, remove it from the repo and add `/public/images/flags` to `.gitignore`. `storage:link` has to run on every server, and on every deploy if each release is a fresh checkout. A restore brings back the files but not the links, so run `storage:link` after restoring too.
+
+It has to be this way round. Symlinked folders inside `storage/app` that point elsewhere aren't followed, so their contents are not backed up.
+
+### Excluding files
+
+To leave things out, add a `.backupignore` to the app's root (next to `.env`, so it's committed and deployed like any other file). It uses `.gitignore` syntax, with paths relative to `storage/app`:
+
+```gitignore
+livewire-tmp/
+exports/
+*.tmp
+```
+
+Dotfiles and the package's own `backups/` folder are always skipped. Anything excluded counts as deleted locally, so `--prune` removes copies of it already in S3.
 
 ## Scheduling backups
 

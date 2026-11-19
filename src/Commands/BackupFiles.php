@@ -3,6 +3,7 @@
 namespace Pseux\Backup\Commands;
 
 use Symfony\Component\Finder\Finder;
+use Symfony\Component\Finder\Gitignore;
 use Throwable;
 
 class BackupFiles extends BaseBackup
@@ -31,9 +32,12 @@ class BackupFiles extends BaseBackup
 		// skipped by Finder, and backups/ is this package's own scratch dir.
 		$files = Finder::create()->files()->in(storage_path('app'))->exclude('backups')->ignoreUnreadableDirs();
 
+		if (is_readable($ignore = base_path('.backupignore')))
+			$files->notPath(Gitignore::toRegex(file_get_contents($ignore)));
+
 		if (!$files->hasResults())
 		{
-			$this->info('Nothing to sync: storage/app is empty.');
+			$this->info('Nothing to sync in storage/app.');
 			return self::SUCCESS;
 		}
 
